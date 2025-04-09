@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>VESDA Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#1e1e1e">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <style>
+    body {
+      background-color: #121212;
+      color: #ffffff;
+    }
+
+    .form-control,
+    .form-control:focus {
+      background-color: #1e1e1e !important;
+      color: #ffffff !important;
+      border: 1px solid #444;
+    }
+
+    input[type="text"]::placeholder {
+      color: #bbbbbb;
+    }
+
+    .form-check-input {
+      background-color: #1e1e1e;
+      border: 1px solid #666;
+    }
+
+    .form-check-label {
+      color: #ccc;
+    }
+
+    .card {
+      background-color: #1c1c1c;
+      border: 1px solid #333;
+      color: #ffffff;
+    }
+
+    .table {
+      background-color: #1e1e1e;
+      color: #ffffff;
+      border-color: #444;
+    }
+
+    .table th,
+    .table td {
+      border-color: #444;
+    }
+
+    .table-striped > tbody > tr:nth-of-type(odd) {
+      background-color: #202020;
+    }
+
+    .trouble-row {
+      background-color: #5c1e1e !important;
+    }
+
+    .btn-warning {
+      color: #000;
+    }
+
+    @media (max-width: 768px) {
+      .btn-group-stack {
+        flex-direction: column !important;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="container mt-5">
+  <h1 class="mb-4">VESDA Tracker</h1>
+
+  <!-- Search & Filter -->
+  <form method="GET" class="row g-3 mb-4">
+    <div class="col-md-4">
+      <input type="text" class="form-control" name="search" placeholder="Search by VESDA ID or Building" value="{{ search }}">
+    </div>
+    <div class="col-md-2 form-check">
+      <input class="form-check-input" type="checkbox" name="troubled" id="troubled" {% if only_troubled %}checked{% endif %}>
+      <label class="form-check-label" for="troubled">Only Troubled</label>
+    </div>
+    <div class="col-md-2">
+      <button type="submit" class="btn btn-primary">Filter</button>
+    </div>
+  </form>
+
+  <!-- Add/Edit Form -->
+  <form method="POST" class="card p-4 mb-4 shadow">
+    <input type="hidden" name="id" value="{{ vesda_to_edit['id'] if vesda_to_edit else '' }}">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">VESDA ID</label>
+        <input type="text" name="vesda_id" class="form-control" required value="{{ vesda_to_edit['vesda_id'] if vesda_to_edit else '' }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Building</label>
+        <input type="text" name="building" class="form-control" value="{{ vesda_to_edit['building'] if vesda_to_edit else '' }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Last Battery Date</label>
+        <input type="date" name="last_battery_date" class="form-control"
+               value="{{ vesda_to_edit['last_battery_date'] if vesda_to_edit and vesda_to_edit['last_battery_date'] != 'N/A' else '' }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Trouble Status</label>
+        <input type="text" name="trouble_status" class="form-control" value="{{ vesda_to_edit['trouble_status'] if vesda_to_edit else '' }}">
+      </div>
+      <div class="col-md-8">
+        <label class="form-label">Notes</label>
+        <textarea name="notes" class="form-control" rows="2">{{ vesda_to_edit['notes'] if vesda_to_edit else '' }}</textarea>
+      </div>
+    </div>
+    <div class="mt-3">
+      <button class="btn btn-success">Save VESDA</button>
+      {% if vesda_to_edit %}
+      <a href="/" class="btn btn-secondary ms-2">Cancel</a>
+      {% endif %}
+    </div>
+  </form>
+
+  <!-- Table -->
+  {% if vesdas %}
+  <div class="table-responsive">
+    <table class="table table-bordered table-striped">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>VESDA ID</th>
+          <th>Building</th>
+          <th>Last Battery</th>
+          <th>Trouble</th>
+          <th>Notes</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in vesdas %}
+        <tr class="{% if v['trouble_status'] and v['trouble_status'].lower() not in ['normal', 'good'] %}trouble-row{% endif %}">
+          <td>{{ v['id'] }}</td>
+          <td>{{ v['vesda_id'] }}</td>
+          <td>{{ v['building'] }}</td>
+          <td>{{ v['last_battery_date'] }}</td>
+          <td>{{ v['trouble_status'] }}</td>
+          <td>{{ v['notes'] }}</td>
+          <td>
+            <div class="d-flex flex-md-row btn-group-stack gap-1">
+              <a href="/?edit_id={{ v['id'] }}" class="btn btn-sm btn-warning">Edit</a>
+              <form method="POST" action="/delete/{{ v['id'] }}" onsubmit="return confirm('Delete this VESDA?');">
+                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="text-muted">No VESDA units found. Add one above!</p>
+  {% endif %}
+</div>
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/static/service-worker.js")
+      .then(reg => console.log("✅ Service worker registered"))
+      .catch(err => console.error("❌ Service worker error:", err));
+  }
+</script>
+
+</body>
+</html>
