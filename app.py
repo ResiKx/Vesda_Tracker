@@ -1,8 +1,8 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, Response
 import sqlite3
 from collections import defaultdict
 from datetime import datetime
-
+import csv
 app = Flask(__name__)
 
 # --- Database Utilities ---
@@ -47,7 +47,7 @@ def index():
         vesda_id = request.form["vesda_id"]
         building = request.form["building"]
         last_battery_date = request.form["last_battery_date"] or "N/A"
-        trouble_status = request.form["trouble_status"]
+        trouble_status = request.form["trouble_status"].strip().lower()
         notes = request.form["notes"]
 
         if request.form.get("id"):  # editing existing
@@ -93,7 +93,7 @@ def index():
         params.extend((f"%{search}%", f"%{search}%"))
 
     if only_troubled:
-        query += " AND trouble_status IS NOT NULL AND trouble_status != '' AND lower(trouble_status) NOT IN ('normal', 'good')"
+        query += " AND trouble_status IS NOT NULL AND trouble_status != '' AND lower(trouble_status) NOT IN ('normal', 'good', 'clear')"
 
     cursor.execute(query, params)
     vesdas = cursor.fetchall()
@@ -119,6 +119,30 @@ def delete_vesda(vesda_id):
     conn.commit()
     conn.close()
     return redirect(url_for("index"))
+
+@app.route("/export_csv/<int:building_id>")
+def export_csv(building_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM vesdas WHERE building_id = ?", (building_id,))
+    vesdas = cursor.fetchall()
+    conn.close()
+
+    def generate():
+        data = csv.writer()
+        output = []
+        data = csv.writer(output.append)
+        data.writerow(["VESDA ID", "Last Battery Date", "Trouble Status", "Notes"])
+        for v in vesdas:
+            data.writerow([v["vesda_id"], v["last_battery_date"], v["trouble_status"], v["notes"]])
+        return "\n".join(output)
+
+    return Response(
+        generate(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=vesdas_building_{building_id}.csv"}
+    )
+
 
 if __name__ == "__main__":
     init_db()
