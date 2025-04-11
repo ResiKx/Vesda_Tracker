@@ -10,60 +10,56 @@
       background-color: #121212;
       color: #ffffff;
     }
-
     .form-control,
     .form-control:focus {
+      background-color: #ffffff;
+      color: #000000;
+      border: 1px solid #444;
+    }
+    .form-control::placeholder {
+      color: #555;
+    }
+    .table {
       background-color: #1e1e1e;
       color: #ffffff;
       border: 1px solid #444;
     }
-
-    input[type="text"]::placeholder {
-      color: #bbbbbb;
-    }
-
-    .form-check-input {
-      background-color: #1e1e1e;
-      border: 1px solid #666;
-    }
-
-    .table {
-      background-color: #1e1e1e;
-      color: #ffffff;
-      border-color: #444;
-    }
-
-    .table th,
-    .table td {
-      border-color: #444;
-    }
-
     .table-striped > tbody > tr:nth-of-type(odd) {
       background-color: #202020;
     }
-
     .trouble-row {
       background-color: #5c1e1e !important;
     }
-
-    .card {
-      background-color: #1c1c1c;
-      border: 1px solid #333;
-      color: #ffffff;
+    .btn-clear {
+      position: absolute;
+      right: 1rem;
+      bottom: 1rem;
+      background-color: #0d6efd;
+      color: white;
     }
-
-    @media (max-width: 768px) {
-      .btn-group-stack {
-        flex-direction: column !important;
-      }
+    .btn-clear:hover {
+      background-color: #0b5ed7;
+      color: white;
     }
   </style>
 </head>
 <body>
 <div class="container mt-5">
+  <a href="{{ url_for('home') }}" class="btn btn-outline-light mb-3">Back to Home</a>
   <h1 class="mb-4">{{ building.name }} – VESDA Units</h1>
 
-  <!-- Search & Filter -->
+  <!-- Flash messages -->
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="alert alert-info">
+        {% for message in messages %}
+          <p>{{ message }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <!-- Filter Form -->
   <form method="GET" class="row g-3 mb-4">
     <div class="col-md-4">
       <input type="text" class="form-control" name="search" placeholder="Search by VESDA ID or Notes" value="{{ search }}">
@@ -77,25 +73,39 @@
     </div>
   </form>
 
-  <!-- Export Button -->
-  <div class="d-flex justify-content-end mb-2">
-    <a href="{{ url_for('export_csv', building_id=building['id']) }}" class="btn btn-outline-light">📥 Export as CSV</a>
-  </div>
+  <!-- Import CSV Form -->
+  <form method="POST" action="{{ url_for('import_csv', building_id=building['id']) }}" enctype="multipart/form-data" class="mb-4">
+    <label class="form-label text-white">Import CSV File</label>
+    <div class="input-group">
+      <input type="file" name="csv_file" class="form-control bg-dark text-white" required>
+      <button class="btn btn-primary" type="submit">Import</button>
+    </div>
+  </form>
 
   <!-- Add/Edit Form -->
-  <form method="POST" class="card p-4 mb-4 shadow">
+  <form method="POST" class="card p-4 mb-4 shadow position-relative">
     <input type="hidden" name="id" value="{{ vesda_to_edit['id'] if vesda_to_edit else '' }}">
     <div class="row g-3">
-      <div class="col-md-4">
+      <div class="col-md-3">
         <label class="form-label">VESDA ID</label>
         <input type="text" name="vesda_id" class="form-control" required value="{{ vesda_to_edit['vesda_id'] if vesda_to_edit else '' }}">
       </div>
-      <div class="col-md-4">
-        <label class="form-label">Last Battery Date</label>
-        <input type="date" name="last_battery_date" class="form-control"
-               value="{{ vesda_to_edit['last_battery_date'] if vesda_to_edit and vesda_to_edit['last_battery_date'] != 'N/A' else '' }}">
+      <div class="col-md-3">
+        <label class="form-label">Floor</label>
+        <input type="text" name="floor" class="form-control" placeholder="e.g., 1st Floor" value="{{ vesda_to_edit['floor'] if vesda_to_edit else '' }}">
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
+        <label class="form-label">Old or New</label>
+        <select name="type" class="form-control">
+          <option value="Old" {% if vesda_to_edit and vesda_to_edit['type'] == 'Old' %}selected{% endif %}>Old</option>
+          <option value="New" {% if vesda_to_edit and vesda_to_edit['type'] == 'New' %}selected{% endif %}>New</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Last Battery Date (MM/YYYY)</label>
+        <input type="month" name="last_battery_date" class="form-control" value="{{ vesda_to_edit['last_battery_date'] if vesda_to_edit and vesda_to_edit['last_battery_date'] != 'N/A' else '' }}">
+      </div>
+      <div class="col-md-3">
         <label class="form-label">Trouble Status</label>
         <input type="text" name="trouble_status" class="form-control" value="{{ vesda_to_edit['trouble_status'] if vesda_to_edit else '' }}">
       </div>
@@ -109,45 +119,48 @@
       {% if vesda_to_edit %}
       <a href="{{ url_for('building_view', building_id=building['id']) }}" class="btn btn-secondary ms-2">Cancel</a>
       {% endif %}
+      <a href="{{ url_for('building_view', building_id=building['id']) }}" class="btn btn-clear">Clear Form</a>
     </div>
   </form>
 
-  <!-- VESDA Table (without internal ID) -->
-  {% if vesdas %}
-  <div class="table-responsive">
-    <table class="table table-bordered table-striped">
-      <thead>
-        <tr>
-          <th>VESDA ID</th>
-          <th>Battery Install Date</th>
-          <th>Trouble</th>
-          <th>Notes</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for v in vesdas %}
-        <tr class="{% if v['trouble_status'] and v['trouble_status'].lower() not in ['normal', 'good', 'clear'] %}trouble-row{% endif %}">
-          <td>{{ v['vesda_id'] }}</td>
-          <td>{{ v['last_battery_date'] }}</td>
-          <td>{{ v['trouble_status'] }}</td>
-          <td>{{ v['notes'] }}</td>
-          <td>
-            <div class="d-flex flex-md-row btn-group-stack gap-1">
-              <a href="{{ url_for('building_view', building_id=building['id']) }}?edit_id={{ v['id'] }}" class="btn btn-sm btn-warning">Edit</a>
-              <form method="POST" action="{{ url_for('delete_vesda', vesda_id=v['id'], building_id=building['id']) }}" onsubmit="return confirm('Delete this VESDA?');">
-                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
-              </form>
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-    <p class="text-muted">No VESDA units added yet. Use the form above to get started.</p>
-  {% endif %}
+ <!-- Table of VESDAs -->
+<form action="{{ url_for('delete_all_vesdas', building_id=building['id']) }}" method="POST" class="mb-3">
+  <button type="submit" class="btn btn-danger">Clear All VESDAs</button>
+  <a href="{{ url_for('home') }}" class="btn btn-secondary ms-2">Return to Home</a>
+</form>
+
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>VESDA ID</th>
+      <th>Floor</th>
+      <th>Type</th>
+      <th>Battery Date</th>
+      <th>Trouble</th>
+      <th>Notes</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for v in vesdas %}
+    <tr class="{% if v.trouble_status and v.trouble_status|lower not in ['clear', 'normal', 'good'] %}trouble-row{% endif %}">
+      <td>{{ v.vesda_id }}</td>
+      <td>{{ v.floor }}</td>
+      <td>{{ v.type }}</td>
+      <td>{{ v.last_battery_date }}</td>
+      <td>{{ v.trouble_status }}</td>
+      <td>{{ v.notes }}</td>
+      <td>
+        <a href="{{ url_for('building_view', building_id=building['id'], edit_id=v['id']) }}" class="btn btn-sm btn-primary text-white">Edit</a>
+        <form method="POST" action="{{ url_for('delete_vesda', vesda_id=v['id'], building_id=building['id']) }}" style="display:inline-block">
+          <button type="submit" class="btn btn-sm btn-danger text-white">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
 </div>
 </body>
 </html>
