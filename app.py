@@ -245,7 +245,7 @@ def export_csv(building_id):
             yield f"{v['vesda_id']},{building_id},{v['floor']},{v['last_battery_date']},{v['trouble_status']},{v['notes']}\n"
 
     return Response(generate(), mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename=vesdas_building_{building_id}.csv"})
+init_db()
 
 if __name__ == "__main__":
-    init_db()
     app.run(debug=True)
