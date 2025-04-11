@@ -201,8 +201,15 @@ def import_csv(building_id):
         reader = csv.DictReader(stream)
         count = 0
 
+
         for row in reader:
             print("ROW:", row)
+
+            notes = row.get("notes", "")
+            last_battery_date = row.get("last_battery_date", "")
+
+            if "replace batts" in notes.lower():
+                (last_battery_date) = ""
             try:
                 cursor.execute("""
                     INSERT INTO vesdas (vesda_id, building_id, floor, type, last_battery_date, trouble_status, notes)
@@ -211,8 +218,8 @@ def import_csv(building_id):
                     row.get("vesda_id"),
                     building_id,
                     row.get("floor", ""),
-                    row.get("type", "Old"),
-                    row.get("last_battery_date", ""),
+                    row.get("type", "Old").strip(),
+                    last_battery_date,
                     row.get("trouble_status", ""),
                     row.get("notes", "")
                 ))
