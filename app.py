@@ -3,6 +3,7 @@ import sqlite3
 from collections import defaultdict
 from datetime import datetime
 import csv
+
 app = Flask(__name__)
 
 # --- Database Utilities ---
@@ -15,13 +16,20 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
+        CREATE TABLE IF NOT EXISTS buildings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL
+        )
+    ''')
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS vesdas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             vesda_id TEXT NOT NULL,
-            building TEXT,
+            building_id INTEGER,
             last_battery_date TEXT,
             trouble_status TEXT,
-            notes TEXT
+            notes TEXT,
+            FOREIGN KEY(building_id) REFERENCES buildings(id)
         )
     ''')
     cursor.execute('''
@@ -38,16 +46,30 @@ def init_db():
     conn.close()
 
 # --- Routes ---
-@app.route("/", methods=["GET", "POST"])
-def index():
+@app.route("/")
+def home():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM buildings")
+    buildings = cursor.fetchall()
+    conn.close()
+    return render_template("home.html", buildings=buildings)
+
+@app.route("/building/<int:building_id>", methods=["GET", "POST"])
+def building_view(building_id):
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    cursor.execute("SELECT id, name FROM buildings WHERE id = ?", (building_id,))
+    building = cursor.fetchone()
+    if not building:
+        conn.close()
+        return "Building not found", 404
+
     if request.method == "POST":
         vesda_id = request.form["vesda_id"]
-        building = request.form["building"]
         last_battery_date = request.form["last_battery_date"] or "N/A"
-        trouble_status = request.form["trouble_status"].strip().lower()
+        trouble_status = request.form["trouble_status"]
         notes = request.form["notes"]
 
         if request.form.get("id"):  # editing existing
@@ -56,8 +78,8 @@ def index():
             original = cursor.fetchone()
 
             # Track history if changes occurred
-            fields = ["vesda_id", "building", "last_battery_date", "trouble_status", "notes"]
-            new_values = [vesda_id, building, last_battery_date, trouble_status, notes]
+            fields = ["vesda_id", "last_battery_date", "trouble_status", "notes"]
+            new_values = [vesda_id, last_battery_date, trouble_status, notes]
             for i, field in enumerate(fields):
                 old_value = original[field]
                 new_value = new_values[i]
@@ -68,28 +90,28 @@ def index():
                     """, (original["vesda_id"], datetime.utcnow().isoformat(), field, old_value, new_value))
 
             cursor.execute("""
-                UPDATE vesdas SET vesda_id = ?, building = ?, last_battery_date = ?,
+                UPDATE vesdas SET vesda_id = ?, last_battery_date = ?,
                 trouble_status = ?, notes = ? WHERE id = ?
-            """, (vesda_id, building, last_battery_date, trouble_status, notes, vesda_id_edit))
+            """, (vesda_id, last_battery_date, trouble_status, notes, vesda_id_edit))
         else:  # adding new
             cursor.execute("""
-                INSERT INTO vesdas (vesda_id, building, last_battery_date, trouble_status, notes)
+                INSERT INTO vesdas (vesda_id, building_id, last_battery_date, trouble_status, notes)
                 VALUES (?, ?, ?, ?, ?)
-            """, (vesda_id, building, last_battery_date, trouble_status, notes))
+            """, (vesda_id, building_id, last_battery_date, trouble_status, notes))
 
         conn.commit()
         conn.close()
-        return redirect("/")
+        return redirect(url_for("building_view", building_id=building_id))
 
     # --- Filtering ---
     search = request.args.get("search", "")
     only_troubled = request.args.get("troubled")
 
-    query = "SELECT * FROM vesdas WHERE 1=1"
-    params = []
+    query = "SELECT * FROM vesdas WHERE building_id = ?"
+    params = [building_id]
 
     if search:
-        query += " AND (vesda_id LIKE ? OR building LIKE ?)"
+        query += " AND (vesda_id LIKE ? OR notes LIKE ?)"
         params.extend((f"%{search}%", f"%{search}%"))
 
     if only_troubled:
@@ -109,16 +131,27 @@ def index():
 
     conn.close()
 
-    return render_template("index.html", vesdas=vesdas, search=search, only_troubled=only_troubled, vesda_to_edit=vesda_to_edit)
+    return render_template("index.html", building=building, vesdas=vesdas, search=search, only_troubled=only_troubled, vesda_to_edit=vesda_to_edit)
 
-@app.route("/delete/<int:vesda_id>", methods=["POST"])
-def delete_vesda(vesda_id):
+@app.route("/delete/<int:vesda_id>/<int:building_id>", methods=["POST"])
+def delete_vesda(vesda_id, building_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM vesdas WHERE id = ?", (vesda_id,))
     conn.commit()
     conn.close()
-    return redirect(url_for("index"))
+    return redirect(url_for("building_view", building_id=building_id))
+
+@app.route("/add_building", methods=["POST"])
+def add_building():
+    name = request.form.get("name")
+    if name:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO buildings (name) VALUES (?)", (name,))
+        conn.commit()
+        conn.close()
+    return redirect(url_for("home"))
 
 @app.route("/export_csv/<int:building_id>")
 def export_csv(building_id):
@@ -129,20 +162,11 @@ def export_csv(building_id):
     conn.close()
 
     def generate():
-        data = csv.writer()
-        output = []
-        data = csv.writer(output.append)
-        data.writerow(["VESDA ID", "Last Battery Date", "Trouble Status", "Notes"])
+        yield "vesda_id,building,last_battery_date,trouble_status,notes\n"
         for v in vesdas:
-            data.writerow([v["vesda_id"], v["last_battery_date"], v["trouble_status"], v["notes"]])
-        return "\n".join(output)
+            yield f"{v['vesda_id']},{building_id},{v['last_battery_date']},{v['trouble_status']},{v['notes']}\n"
 
-    return Response(
-        generate(),
-        mimetype="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=vesdas_building_{building_id}.csv"}
-    )
-
+    return Response(generate(), mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename=vesdas_building_{building_id}.csv"})
 
 if __name__ == "__main__":
     init_db()
